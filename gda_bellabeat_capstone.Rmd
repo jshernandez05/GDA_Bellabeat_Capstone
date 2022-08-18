@@ -1,0 +1,704 @@
+---
+title: "GDA_Bellabeat_Capstone"
+author: "Joseph Hernandez"
+date: '2022-07-02'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Bellabeat is a high-tech manufacturer of health-focused smart products. Urška Sršen, co-founder and Chief 
+Creative Officer, believes analyzing smart device fitness data could facilitate the companies ability to 
+become larger global market player.
+
+## Ask
+
+### Business Task
+
+Identify opportunities for growth based on smart device data and provide recommendations to steer 
+Bellabeat's marketing strategy.
+
+### Bellabeat Products
+
+-   **Bellabeat app:** provides users with health data related to their activity, sleep, stress, menstrual cycle, 
+and mindfulness habits. This data can help users better understand their current habits and make healthy decisions. 
+The Bellabeat app connects to their line of smart wellness products.
+
+-   **Leaf:** Bellabeat's classic wellness tracker can be worn as a bracelet, necklace, or clip. The Leaf tracker 
+connects to the Bellabeat app to track activity, sleep, and stress.
+-   **Time:** This wellness watch combines the timeless look of a classic timepiece with smart technology to track 
+user activity sleep, and stress. The Time watch connects to the Bellabeat app to provide you with insights into your 
+daily wellness.
+-   **Spring:** This is a water bottle that tracks daily water intake using smart technology to ensure that you are 
+appropriately hydrated throughout the day. The Spring bottle connects to the Bellabeat app to track your hydration levels.
+-   **Bellabeat membership:** Bellabeat also offers a subscription-based membership program for users. Membership 
+gives users 24/7 access to fully personalized guidance on nutrition, activity, sleep, health and beauty, and 
+mindfulness based on their lifestyle and goals
+
+### Guiding Questions
+
+-   What are some trends in smart device usage?
+-   How could these trends apply to Bellabeat customers?
+-   How could these trends help influence Bellabeat's marketing strategy?
+
+### Stakeholders
+
+-   Urška Sršen - Bellabeat cofounder and Chief Creative Officer
+-   Sando Mur - Bellabeat cofounder and key member of Bellabeat's executive team
+-   Marketing Analytics Team
+
+## Prepare
+
+### Dataset
+
+The data used is a public dataset with a Creative Commons license. The dataset was downloaded from 
+[Kaggle](https://www.kaggle.com/datasets/arashnic/fitbit). The data is representative of 30 Fitbit users tracking 
+minute-level output for physical activity, heart rate, and sleep monitoring. The entire dataset consists 
+of 18 .csv files each containing quantitative data for different fitness tracking categories. The dataset for 
+METs was excluded because the lowest value for MET was 10, which is equivelant to someone playing football or 
+jumping rope and will therefore be excluded. The data's sample size (30 individuals) could create a bias and suggest 
+any insights identified may not be of the entire population. Additionally, the limited time duration of the study 
+(two months) may not be long enough to provide confidence in recommendations.
+
+### Setting Up the Environment
+
+Install packages utilized for analysis
+
+`install.packages("tidyverse")`\
+`install.packages("here")`\
+`install.packages("skimr")`\
+`install.packages("janitor")`\
+`install.packages("ggpubr")`\
+`install.packages("ggrepel")`\
+`install.packages("VennDiagram")`\
+`install.packages("png")`\
+`install.packages("openair")`\
+`install.packages("formattable")`
+
+Load libraries used for analysis
+
+```{r initiate libraries, warning = FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(skimr)
+library(janitor)
+library(lubridate)
+library(ggpubr)
+library(ggrepel)
+library(readr)
+library(scales)
+library(VennDiagram)
+library(png)
+library(openair)
+library(formattable)
+```
+
+Set working directory
+
+```{r set working directory, warning = FALSE, message=FALSE}
+setwd("~/Documents/Code/Projects/gda_fitbit_tracker_da_project")
+```
+
+### Import Datasets
+
+Some of the datasets contained repeated data points that were rolled up into a daily_activity data set. Additionally, 
+several datasets had both long and wide versions, only long versions were imported for analysis. The following 
+data sets were utilized to help answer questions related to the business task.
+
+-   dailyActivity_merged.csv
+-   sleepDay_merged.csv
+-   hourlyCalories_merge.csv
+-   hourlyIntensities_merged.csv
+-   hourlySteps_merged.csv
+-   heartrate_seeconds_merged.csv
+-   weightLogInfo_merged.csv
+
+```{r import datasets}
+daily_activity_all <- read.csv("data/dailyActivity_merged.csv")
+daily_sleep <- read.csv("data/sleepDay_merged.csv")
+hourly_calories <- read.csv("data/hourlyCalories_merged.csv")
+hourly_intensity <- read.csv("data/hourlyIntensities_merged.csv")
+hourly_steps <- read.csv("data/hourlySteps_merged.csv")
+heartrate_seconds <- read.csv("data/heartrate_seconds_merged.csv")
+weight_log <- read.csv("data/weightLogInfo_merged.csv") 
+```
+
+
+## Process
+
+This analysis will be done in R due to the amount of data, its ability to easily combine and reshape datasets, 
+and to create data visualizations for presentation. Google Slides will be used to create a presentation for the 
+stakeholders to communicate findings and recommendations.
+
+### Data Cleaning / Transformation
+
+```{r preview data}
+str(daily_activity_all)
+str(daily_sleep)
+str(hourly_calories)
+str(hourly_intensity)
+str(hourly_steps)
+str(heartrate_seconds)
+str(weight_log)
+```
+
+Looking at the structure of each dataframe, we identify a couple of cleaning requirments
+
+-   The repeated distance columns can be dropped as they will not be used for analysis and to improve 
+computational processing.
+-   The data from the daily data sets can be combined into one dataframe; and
+-   The data from the hourly data sets can be combined into one dataframe.
+-   Date columns needed to be formatted as dates instead of strings
+-   Day of week can be added to provide an additional way to analyze the data
+
+#### Join daily datasets together
+
+Join daily_sleep with daily_activities
+
+-   Need to isolate date and time in daily_sleep
+-   convert ActivityDate to date to enable use for join criteria
+
+```{r process daily_sleep, warning = FALSE, message=FALSE}
+sleep <- daily_sleep %>% 
+  clean_names() %>% 
+  separate(col = sleep_day, c("date", "sleep_time"), sep = " ") %>%
+  mutate(date = mdy(date), day_week = weekdays(date)) %>% 
+  rename("sleep_records" = "total_sleep_records",
+        "asleep_mins" = "total_minutes_asleep") %>% 
+  select(-c(sleep_time,total_time_in_bed))
+sleep <- sleep[,c(1,2,5,3,4)]
+```
+
+```{r join daily data}
+daily_activities <- daily_activity_all %>%
+  # Add column for total activity minutes and day of week
+  mutate(ActivityDate = mdy(ActivityDate), day_week = weekdays(ActivityDate)) %>% 
+  rowwise() %>% 
+  mutate(total_active_minutes = sum(c_across(VeryActiveMinutes:LightlyActiveMinutes))) %>% 
+  rename("date" = "ActivityDate", "total_calories" = "Calories") %>% 
+  clean_names() %>%
+  left_join(sleep, by = c("id", "date", "day_week")) %>% 
+  select(-c(5:10))
+# Reorder columns
+daily_activities <- daily_activities[,c(1,2,10,9,3,4,11,5:8,12,13)]
+# Remove duplicates
+daily_activities <- daily_activities[!duplicated(daily_activities),]
+```
+
+Take a deeper look at data fields of combined dataframe
+
+-  There are records with either 0 steps taken or 1440 sedentary_minutes. This would indicate that the device was not
+was not utilized on the given day. Those records are being eliminate skewness in analysis.
+```{r view data}
+# view(daily_activities)
+# 84 records removed
+daily_activities <- daily_activities[!(daily_activities$total_steps == 0 | daily_activities$sedentary_minutes == 1440),]
+```
+
+#### Join hourly datasets together
+
+Join hourly_calories, hourly_intensity, and hourly_steps
+
+```{r join hourly dataa}
+hourly_activities <- hourly_calories %>% 
+  left_join(hourly_intensity, by = c("Id", "ActivityHour")) %>% 
+  left_join(hourly_steps, by = c("Id", "ActivityHour")) %>% 
+  clean_names() %>% 
+  mutate(activity_hour = mdy_hms(activity_hour),
+         day_week = weekdays(activity_hour)) %>% 
+  separate(col = activity_hour, into  = c("date", "time"), sep = " ") %>% 
+  mutate(date = ymd(date)) %>% 
+  select(-"average_intensity")
+# Reorder columns
+hourly_activitities <- hourly_activities[,c(1,2,7,3,6,5,4)]
+```
+
+Take a deeper look at data fields of combined dataframe
+
+-  There are records with either 0 steps taken or 1440 sedentary_minutes. This would indicate that the device was not
+was not utilized on the given day. Those records are being eliminate skewness in analysis.
+```{r}
+# view(hourly_activities)
+# 84 records removed
+hourly_activities <- hourly_activities[!(hourly_activities$step_total == 0),]
+```
+
+#### Clean heartrate data
+
+-  Group table by user id and date 
+-  Table is has data recorded for every five seconds
+-  Analysis will not be a deep dive into HR monitoring
+-  Therefore data can be condensed for higher level usage info
+
+```{r heartrate data prep}
+heartrate <- heartrate_seconds %>% 
+  clean_names() %>% 
+  mutate(time = mdy_hms(time)) %>% 
+  separate(col = time, c("date", "time"), sep = " ") %>% 
+  # group data by id and date
+  select(-c(time, value)) %>% 
+  group_by(id, date) %>% 
+  summarize(.groups = "drop")
+```
+
+#### Clean weight_log
+
+```{r weight_log data prep}
+weight_log <- weight_log %>% 
+  clean_names() %>% 
+  mutate(date = mdy_hms(date)) %>% 
+  separate(col = date, into = c("date", "time"), sep = " ") %>% 
+  mutate(date = ymd(date)) %>% 
+  select(-"log_id")
+```
+
+Check to ensure date range matches across dataframes
+
+```{r verify date range, warning = FALSE, message=FALSE}
+
+min_date <- min(daily_activities$date)
+print(min_date)
+
+min(daily_activities$date) == min(hourly_activities$date) && 
++ min(daily_activities$date) == min(sleep$date) && 
++ min(daily_activities$date) == min(heartrate$date)
+
+max_date <- max(daily_activities$date)
+print(max_date)
+
+max(daily_activities$date) == max(hourly_activities$date) && 
++ max(daily_activities$date) == max(sleep$date) && 
++ max(daily_activities$date) == max(heartrate$date)
+```
+
+## Analyze
+
+### Exploritory Data Analysis
+
+#### Idenify user usage by category
+
+-   There are 33 users represented in the data
+
+```{r category usage}
+user_count <- 33
+usage_type_df <- data.frame("steps" = n_unique(daily_activities$id),
+                            "heartrate" = n_unique(heartrate$id),
+                            "sleep" = n_unique(sleep$Id),
+                            "weight" = n_unique(weight_log$id)) %>% 
+  mutate("steps_pct" = percent(steps/user_count),
+         "heartrate_pct" = percent(heartrate/user_count),
+         "sleep_pct" = percent(sleep/user_count),
+         "weight_pct" = percent(weight/user_count)
+  )
+# Reorder columns
+usage_type_df <- usage_type_df[,c(1,5,2,6,3,7,4,8)]
+usage_type_df
+```
+
+#### Identify Feauture Usagage
+
+-   Estabish unique Ids for each activiity
+-   Create a Venn Diagram to show interseciton of activities
+
+```{r venn diagram intersection}
+# Generate 4 sets of unique Ids for each activity
+step_ids <- unique(daily_activities$id, incomparables = FALSE)
+sleep_ids <- unique(sleep$id, incomparables = FALSE)
+heartrate_ids <- unique(heartrate$id, incomparables = FALSE)
+weight_ids <- unique(weight_log$id, incomparables = FALSE)
+
+# Plot
+venn <- venn.diagram(x = list(step_ids, sleep_ids, heartrate_ids, weight_ids),
+  category.names = c("Step Tracking", "Sleep Monitor", "HR Monitor", "Weight Tracking"),
+  main = "Multi-feature Users",
+  main.pos = c(0.11, 1.05),
+  main.fontface = "bold",
+  main.fontfamily = "sans",
+  sub = "Intersection of users and activity tracking type",
+  sub.pos = c(0.25, 1.05),
+  filename = "images/activities_venn.png",
+  print.mode = c("raw","percent"),
+  sigdigs = 2,
+  output=TRUE, 
+  imagetype="png",
+  lwd = 2, 
+  fill = c("skyblue", "pink1", "mediumorchid", "orange"), 
+  cex = .75, 
+  fontface = "bold", 
+  fontfamily = "sans",
+  cat.cex = .7, 
+  cat.fontface = "bold", 
+  cat.default.pos = "outer", 
+  cat.fontfamily = "sans")
+
+# Read plot image
+img <- readPNG("images/activities_venn.png")
+grid::grid.raster(img)
+```
+
+**Single-feature usage:**
+
+* Step counting feature was utilized by all users
+
+-  **18%**, 6 Users, only utilized the the ***Step Tracking*** feature
+
+
+**Multi-feature usage:**
+
+Feature combinations:
+
+-  **73%**, 24 Users, utilized ***Step Tracking*** and **Sleep Monitor*** features 
+-  **42%**, 14 Users, utilized ***Step Tracking*** and ***Heart Rate Monitor*** features
+-  **24%**, 8 Users, utilized ***Step Tracking*** and ***Weight Tracking*** features
+
+Two feature only combinations:
+
+-  **33%**, 11 Users, utilized only two features
+-  **27%**, 9 Users, utilized ***Step Tracking*** and **Sleep Monitor***
+-  **3%**, 1 User, utilized ***Step Tracking*** and ***Heart Rate Monitor***
+-  **3%**, 1 User, utilized ***Step Tracking*** and ***Weight Tracking***
+
+Three feature only combinations:
+
+-  **39%**, 13 Users, utilized only three features
+-  **27%**, 9 Users, utilized ***Step Tracking*** and **Sleep Monitor*** and ***Heart Rate Monitor*** features
+-  **9%**, 3 User, utilized ***Step Tracking*** and **Sleep Monitor*** and ***Weight Tracking*** features
+-  **3%**, 1 User, utilized ***Step Tracking*** and ***Heart Rate Monitor*** and ***Weight Tracking*** features
+
+Four feature combinations:
+
+-  **9%**, 9 Users, utilized all four features represented by the data
+
+
+#### Identifying Trends
+
+Looking for daily usage trends
+
+```{r identify daily usage, warning = FALSE, message=FALSE}
+# Get number of users used their devices each day:
+obs_users <- daily_activities %>% group_by(date, day_week) %>% 
+  summarize(user_perday = sum(n()), .groups = "drop") %>% 
+  mutate(date = as.POSIXct(paste(as.character(date), "00:00:00")))
+
+#Plot a calendar heat map on users per day
+calendarPlot(obs_users, pollutant = "user_perday", year = 2016, month = 4:5,  cex.lim = c(0.6, 1), 
+             main = "Number of Users Used Devices by Day", cols= openColours(scheme = "BrBG"), 
+             key.header = "Number of Users", key.position = "top", annotate = c("value"), font.lim = c(2,1))
+options(repr.plot.width = 14, repr.plot.height = 10)
+```
+
+Creating a dataframe to isolate step_count and sleep data, the most utilized features.
+
+- Remove records with N/A values for sleep in *daily_activities* dataframe
+
+```{r combine step and sleep data}
+step_sleep_df <- daily_activities[complete.cases(daily_activities),]
+# Check data
+head(step_sleep_df)
+nrow(step_sleep_df)
+n_unique(step_sleep_df$id)
+```
+
+```{r step and sleep daily usage, warning = FALSE, message=FALSE}
+# Get number of users used their devices each day:
+top_feature_obs_users <- step_sleep_df %>% group_by(date, day_week) %>% 
+  summarize(user_perday = sum(n()), .groups = "drop") %>% 
+  mutate(date = as.POSIXct(paste(as.character(date), "00:00:00")))
+
+#Plot a calendar heat map on step & sleep users per day
+calendarPlot(top_feature_obs_users, pollutant = "user_perday", year = 2016, month = 4:5,  cex.lim = c(0.6, 1), 
+             main = "Number of Users Used Devices by Day", cols= openColours(scheme = "BrBG"), 
+             key.header = "Number of Users", key.position = "top", annotate = c("value"), font.lim = c(2,1))
+options(repr.plot.width = 14, repr.plot.height = 10)
+```
+
+See if there is variance in which days of the week see more usage
+
+```{r daily usage by day of week}
+use_day_week <- merge(obs_users, top_feature_obs_users, by = c("date", "day_week")) %>%
+  select(-c(date)) %>% 
+  group_by(day_week) %>%
+  rename("all_activity_use" = user_perday.x, "step_sleep_use" = user_perday.y) %>%
+  summarise(daily_avg_all = round(mean(all_activity_use),0), daily_avg_step_sleep = round(mean(step_sleep_use),0))
+
+use_day_week$day_week <- ordered(use_day_week$day_week, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                                                                 "Friday", "Saturday", "Sunday"))
+
+ggplot(data = use_day_week, aes(x = ordered(substr(day_week,0,3), levels=c("Mon","Tue","Wed","Thu","Fri",
+                                                                           "Sat","Sun")))) +
+  geom_line(mapping = aes(y=daily_avg_all, group=1), color = rgb(90,180,172, maxColorValue = 255)) +
+  geom_point(mapping = aes( y=daily_avg_all), color = rgb(90,180,172, maxColorValue = 255))  +
+  geom_line(mapping = aes(y=daily_avg_step_sleep, group=2), color = rgb(216,179,101, maxColorValue = 255))  +
+  geom_point(mapping = aes(y=daily_avg_step_sleep), color = rgb(216,179,101, maxColorValue = 255)) +
+  annotate("text", label = "All Users", x = 2, y = 24, color = rgb(90,180,172, maxColorValue = 255)) +
+  annotate("text", label = "Top Feature Users", x = 2, y = 9, color = rgb(216,179,101, maxColorValue = 255)) +
+  expand_limits(x = 0, y = 0) +
+  labs(x="Day of Week", y="Average Users", title = "Usage by Day of Week")
+```
+
+Find the average usage per user per day
+- break user into groups by amount of days of data recorded ('High', 'Medium', 'Low')
+- find percentage of each category
+
+```{r usage categories}
+# Find number of day user used device
+user_days_df <- daily_activities %>%
+  group_by(id) %>% 
+  summarize(num_daysused = sum(n()), .groups = "drop") %>% 
+  arrange(-num_daysused)
+
+# Create category buckets
+usage_bucket_df <- user_days_df %>% 
+  mutate(user_type = case_when(
+    between(num_daysused, 1, 10) ~ "Low Usage",
+    between(num_daysused, 11, 20) ~ "Medium Usage",
+    between(num_daysused, 21, 31) ~ "High Usage",
+    TRUE ~ NA_character_)
+  )
+
+# Combine new categories to original data_frame
+daily_activity_categories <- daily_activities %>% 
+  left_join(usage_bucket_df, by = "id")
+
+# Get percentage for each user_group
+user_group_pct <- usage_bucket_df %>% 
+  mutate(user_type = fct_relevel(user_type, c("High Usage", 
+                                              "Medium Usage", 
+                                              "Low Usage"))) %>% 
+  group_by(user_type) %>% 
+  summarize(num_users = n()) %>% 
+  mutate(percentage = percent(num_users/sum(num_users)))
+```
+
+Create same type of dataframe from top feature users
+
+```{r top feature usage categories}
+# Find number of day user used device
+step_sleep_days_df <- step_sleep_df %>%
+  group_by(id) %>% 
+  summarize(num_daysused = sum(n()), .groups = "drop") %>% 
+  arrange(-num_daysused)
+
+# Create category buckets
+step_sleep_usage_bucket_df <- step_sleep_days_df %>% 
+  mutate(user_type = case_when(
+    between(num_daysused, 1, 10) ~ "Low Usage",
+    between(num_daysused, 11, 20) ~ "Medium Usage",
+    between(num_daysused, 21, 31) ~ "High Usage",
+    TRUE ~ NA_character_)
+  )
+
+# Combine new categories to original data_frame
+step_sleep_categories <- step_sleep_df %>% 
+  left_join(usage_bucket_df, by = "id")
+
+# Get percentage for each user_group
+step_sleep_group_pct <- step_sleep_usage_bucket_df %>% 
+  mutate(user_type = fct_relevel(user_type, c("High Usage", 
+                                              "Medium Usage", 
+                                              "Low Usage"))) %>% 
+  group_by(user_type) %>% 
+  summarize(num_users = n()) %>% 
+  mutate(percentage = percent(num_users/sum(num_users)))
+```
+
+```{r create user bucket table}
+# Set custom colors
+grey <- "#e0e0e0"
+tan <- "#d8b365"
+dgrey <- "#525252"
+
+# Define color_tile_color function
+ color_tile_color <- function (...) {
+  formatter("span", style = function(x) {
+    style(display = "block",
+          padding = "0 3px",
+          `font.weight` = "bold",
+          `border-radius` = "3px", 
+          `background-color` = ifelse(x == max(x) , tan, grey)) # Remember to change the colors!
+  })}
+
+# Use it just like color_tile but without colors
+formattable(user_group_pct, align=c("l", "c", "c"),list(
+  user_type = formatter("span", style = ~ style(color=dgrey, font.weight="bold")),
+  num_users=color_tile_color(),
+  percentage=color_tile_color()
+  )
+) 
+```
+
+Identify Trends in Activity Times by User Groups
+  
+```{r create activity by group df, warning = FALSE, message=FALSE}
+group_activity <-  daily_activity_categories %>% 
+  group_by(user_type) %>% 
+  summarize(very_active = round(mean(very_active_minutes), 0),
+            fairly_active = round(mean(fairly_active_minutes), 0),
+            lightly_active = round(mean(lightly_active_minutes), 0),
+            .groups = "drop")
+
+# Reshape data from wide to long for stacked bar chart
+group_activity_long <- gather(data = group_activity, key = "variables", value = "value", -user_type) %>% 
+  mutate(user_type = fct_relevel(user_type, c("High Usage", 
+                                              "Medium Usage", 
+                                              "Low Usage")),
+                                 variables = fct_relevel(variables, c("very_active",
+                                                                      "fairly_active",
+                                                                      "lightly_active"
+                                                                      )
+                                                         )
+                                 )
+
+# Plot activity minutes per day by group
+
+group_activity_long %>% 
+  ggplot() +
+  geom_col(aes(x=user_type, y=value, group=variables, fill=variables)) +
+  theme(axis.text.x = element_text(size = 10)) +
+  labs(x= "User Group", y="Minutes") +
+  ggtitle("Average Type Activity Minutes by Group")
+options(repr.plot.width = 8, repr.plot.height = 5)
+```
+  
+  Identify trends in Activity Minutes by Day of Week
+  
+```{r activity minutes by day grid, warning = FALSE, message=FALSE}
+group_activity2 <- daily_activity_categories %>% 
+  group_by(day_week, user_type) %>%
+  mutate(day_week = substr(day_week,0,3)) %>% 
+  summarize(very_active = round(mean(very_active_minutes), 0),
+            fairly_active = round(mean(fairly_active_minutes), 0),
+            lightly_active = round(mean(lightly_active_minutes), 0),
+            .groups = "drop")
+
+# Reshape data from wide to long
+group_activity2_long <- gather(data = group_activity2, key = "variables", value = "value", -c(user_type,day_week)) %>% 
+  mutate(user_type = fct_relevel(user_type, c("High Usage", "Medium Usage", "Low Usage")
+                                 ),
+         variables = fct_relevel(variables, c("very_active", "fairly_active", "lightly_active")
+                                 ),
+         day_week = fct_relevel(day_week, c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                                )
+         )
+
+# Plot facet_grid
+group_activity2_long %>% 
+  ggplot() + 
+  geom_col(aes(x=day_week, y=value, fill=variables)) +
+  theme(axis.text.x = element_text(size = 10, angle = 60, hjust = 1, vjust = 1)) +
+  labs(x="Day of Week", y="Minutes") +
+  ggtitle("Active Minutes", "by User Type, Activity Type, and Day") +
+  facet_grid(variables~user_type) +
+  theme(legend.position="none")
+options(repr.plot.width = 14, repr.plot.height = 6)
+```
+  
+  -  High Usage users have more consistent levels of activity through out the week
+  -  Low Usage users did not record many fairly or very active minutes
+  -  Low Usage minutes had no activity recorded on weekends
+  
+```{r correlation active min and steps by group, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=total_steps)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  facet_wrap(~user_type) +
+  labs(x="Active Minutes", y="Steps") +
+  ggtitle("Correlation of Active Minutes and Steps", "By User Type") +
+  theme(legend.position="none")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+
+```{r correlation active min and steps, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=total_steps)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  labs(x="Active Minutes", y="Steps") +
+  ggtitle("Correlation of Active Minutes and Steps")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+
+```{r correlation active min and sleep by group, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=asleep_mins)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  facet_wrap(~user_type) +
+  labs(x="Active Minutes", y="Minutes Asleep") +
+  ggtitle("Correlation of Active Minutes and Sleep", "By User Type") +
+  theme(legend.position="none")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+
+```{r correlation avtive min and sleep combined, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=asleep_mins)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  labs(x="Active Minutes", y="Minutes Asleep") +
+  ggtitle("Correlation of Active Minutes and Sleep")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+
+```{r correlation active min and calories by group, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=total_calories)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  facet_wrap(~user_type) +
+  labs(x="Active Minutes", y="Minutes Asleep") +
+  ggtitle("Correlation of Active Minutes and Calories", "By User Type") +
+  theme(legend.position="none")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+
+```{r correlation avtive min and calories combined, warning = FALSE, message=FALSE}
+ggplot(data = daily_activity_categories, aes(x=total_active_minutes, y=total_calories)) +
+  geom_point(size = 1, aes(color=user_type)) +
+  geom_smooth(method='loess', formula=y ~ x) +
+  stat_cor(aes(label= ..r.label..), label.x = 10) +
+  labs(x="Active Minutes", y="Minutes Asleep") +
+  ggtitle("Correlation of Active Minutes and Calories")
+options(repr.plot.width = 14, repr.plot.height = 8)
+```
+## Recommendations (Act)
+
+Currently, Step tracking and Sleep Monitoring are the biggest features utilized by Bellabeat users. Only 9% of the users tracked all four features associated with the data. The feature least used was weight tracking. 
+
+The users can be broken down into three categories: High, Medium, and Low Usage. The amount of activity minutes and level of intensity minutes are directly correlated to the usage group. Of note is that activity tracking seems to taper off in the last week of data.
+
+### Marketing
+
+-  To promote growth the target population should be the low usage users. The other usage groups utilized their devices consistently. 
+
+-  Advertising the benefits of active lifestyle 
+
+-  Promote the weight tracking feature and integrate it with all devices
+
+### Consumer Engagement / Interaction
+
+-  Smartphone and device reminders, achievements, and goal tracking can promote more increased device use and encourage users to stay consistent with activity tracking.
+
+-  Fitness activity social networking ability integration will encourage increased device usage through group settings and accountability partnering.
+
+-  Bellabeat community challenges. Create weekly, monthly, or annual challenges for activities such as steps, distance, total activity, etc.. 
+
+### Product Extension
+
+-  Incorporating a smart weight scale into the product line can present opportunity for increased feature usage and further goal achievement.
+
+    -  Manually having to input daily or weekly weight information can be considered an additional burden and deter user from utilizing the feature.
+  
+    -  Automating data transfer from a smart scale and integrating it with other smart devices and the Bellabeat application can enhance the overall device ecosystem.
+
+### Further Research
+
+-  Survey current users about weight tracking usage and their reception of utilizing a smart scale for weight tracking.
+
+-  Survey current users for ideas for challenges and types of reminders that would be beneficial to their goals and needs.
+
